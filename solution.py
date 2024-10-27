@@ -151,6 +151,7 @@ class SWAGInference(object):
         # TODO(1): create attributes for SWAG-diagonal
         self.theta_swag = self._create_weight_copy()
         self.theta_squared_mean = self._create_weight_copy()
+        self.cov_diag = self._create_weight_copy() 
         self.epoch_count = 0
 
         #  Hint: self._create_weight_copy() creates an all-zero copy of the weights
@@ -180,6 +181,7 @@ class SWAGInference(object):
             # help
             self.theta_swag[name] = (self.theta_swag[name] * (self.epoch_count-1) + param)/self.epoch_count
             self.theta_squared_mean[name] = (self.theta_squared_mean[name] * (self.epoch_count-1) + param**2)/self.epoch_count
+            self.cov_diag[name] = self.theta_squared_mean[name] - self.theta_swag[name]**2
 
             # raise NotImplementedError("Update SWAG-diagonal statistics")
 
@@ -298,12 +300,18 @@ class SWAGInference(object):
         # and perform inference with each network on all samples in loader.
         model_predictions = []
         for _ in tqdm.trange(self.num_bma_samples, desc="Performing Bayesian model averaging"):
+            sample_parameter_weights = torch.normal(self.theta_swag, self.cov_diag)
             # TODO(1): Sample new parameters for self.network from the SWAG approximate posterior
             print(_)
-            raise NotImplementedError("Sample network parameters")
+            #raise NotImplementedError("Sample network parameters")
 
             # TODO(1): Perform inference for all samples in `loader` using current model sample,
             #  and add the predictions to model_predictions
+            # we need to predict for each of the networks
+            all_predictions = []
+            for (batch_images,) in loader:
+                all_predictions.append(self.network(batch_images))
+
             raise NotImplementedError("Perform inference using current model")
 
         assert len(model_predictions) == self.num_bma_samples
@@ -315,8 +323,10 @@ class SWAGInference(object):
         )
 
         # TODO(1): Average predictions from different model samples into bma_probabilities
-        raise NotImplementedError("Aggregate predictions from model samples")
-        bma_probabilities = ...
+        #raise NotImplementedError("Aggregate predictions from model samples")
+    
+        # this needs to be fixed
+        bma_probabilities = torch.cat(all_predictions)
 
         assert bma_probabilities.dim() == 2 and bma_probabilities.size(1) == 6  # N x C
         return bma_probabilities
