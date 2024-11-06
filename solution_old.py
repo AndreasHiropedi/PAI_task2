@@ -111,7 +111,7 @@ class SWAGInference(object):
         self,
         train_xs: torch.Tensor,
         model_dir: pathlib.Path,
-        # TODO(10): change inference_mode to InferenceMode.SWAG_DIAGONAL
+        # TODO(1): change inference_mode to InferenceMode.SWAG_DIAGONAL
         # TODO(2): change inference_mode to InferenceMode.SWAG_FULL
         inference_mode: InferenceType = InferenceType.SWAG_DIAGONAL,
         # TODO(2): optionally add/tweak hyperparameters
@@ -148,17 +148,20 @@ class SWAGInference(object):
         self.training_dataset = torch.utils.data.TensorDataset(train_xs)
 
         # SWAG-diagonal
-        # TODO(10): create attributes for SWAG-diagonal
+        # TODO(1): create attributes for SWAG-diagonal
         self.theta_swag = self._create_weight_copy()
         self.theta_squared_mean = self._create_weight_copy()
         self.cov_diag = self._create_weight_copy() 
         self.epoch_count = 0
+
         #  Hint: self._create_weight_copy() creates an all-zero copy of the weights
         #  as a dictionary that maps from weight name to values.
         #  Hint: you never need to consider the full vector of weights,
         #  but can always act on per-layer weights (in the format that _create_weight_copy() returns)
 
         # Full SWAG
+        self.D = collections.deque()
+        # maybe put in max length
         # TODO(2): create attributes for SWAG-full
         #  Hint: check collections.deque
 
@@ -174,20 +177,25 @@ class SWAGInference(object):
         # Create a copy of the current network weights
         copied_params = {name: param.detach() for name, param in self.network.named_parameters()}
 
-        self.epoch_count += 1
-
         # SWAG-diagonal
         for name, param in copied_params.items():
-            # TODO(10): update SWAG-diagonal attributes for weight `name` using `copied_params` and `param`
-            # raise NotImplementedError("Update SWAG-diagonal statistics")
-            self.theta_swag[name] = (self.theta_swag[name] * (self.epoch_count) + param)/(self.epoch_count+1)
-            self.theta_squared_mean[name] = (self.theta_squared_mean[name] * (self.epoch_count) + param**2)/(self.epoch_count+1)
+            # TODO(1): update SWAG-diagonal attributes for weight `name` using `copied_params` and `param`
+            # help
+            self.theta_swag[name] = (self.theta_swag[name] * (self.epoch_count-1) + param)/self.epoch_count
+            self.theta_squared_mean[name] = (self.theta_squared_mean[name] * (self.epoch_count-1) + param**2)/self.epoch_count
             self.cov_diag[name] = self.theta_squared_mean[name] - self.theta_swag[name]**2
+
+            # raise NotImplementedError("Update SWAG-diagonal statistics")
 
         # Full SWAG
         if self.inference_mode == InferenceType.SWAG_FULL:
+            self.D.append(self.network.parameters()-self.theta_swag)
             # TODO(2): update full SWAG attributes for weight `name` using `copied_params` and `param`
-            raise NotImplementedError("Update full SWAG statistics")
+            for name, param in copied_params.items():
+                self.theta_mean[name] = (self.theta_swag[name] * (self.epoch_count-1) + param)/self.epoch_count
+                self.theta_squared_mean[name] = (self.theta_squared_mean[name] * (self.epoch_count-1) + param**2)/self.epoch_count
+                self.cov_diag[name] = self.theta_squared_mean[name] - self.theta_swag[name]**2
+            #raise NotImplementedError("Update full SWAG statistics")
 
     def fit_swag_model(self, loader: torch.utils.data.DataLoader) -> None:
         """
@@ -217,15 +225,17 @@ class SWAGInference(object):
             steps_per_epoch=len(loader),
         )
 
-        # TODO(10): Perform initialization for SWAG fitting
+        # TODO(1): Perform initialization for SWAG fitting
         old_weights = torch.load("map_weights.pt") 
         self.network.load_state_dict(old_weights)
+
         # raise NotImplementedError("Initialize SWAG fitting")
 
         self.network.train()
         with tqdm.trange(self.swag_training_epochs, desc="Running gradient descent for SWA") as pbar:
             progress_dict = {}
             for epoch in pbar:
+                self.epoch_count += 1
                 avg_loss = 0.0
                 avg_accuracy = 0.0
                 num_samples = 0
@@ -251,7 +261,8 @@ class SWAGInference(object):
                     progress_dict["avg. epoch accuracy"] = avg_accuracy
                     pbar.set_postfix(progress_dict)
 
-                # TODO(10): Implement periodic SWAG updates using the attributes defined in __init__
+                # TODO(1): Implement periodic SWAG updates using the attributes defined in __init__
+                # update help
                 self.update_swag_statistics()
                 #raise NotImplementedError("Periodically update SWAG statistics")
 
@@ -266,7 +277,7 @@ class SWAGInference(object):
             self._calibration_threshold = 0.0
             return
 
-        # TODO(10): pick a prediction threshold, either constant or adaptive.
+        # TODO(1): pick a prediction threshold, either constant or adaptive.
         #  The provided value should suffice to pass the easy baseline.
         self._calibration_threshold = 2.0 / 3.0
 
@@ -295,12 +306,23 @@ class SWAGInference(object):
         # and perform inference with each network on all samples in loader.
         model_predictions = []
         for _ in tqdm.trange(self.num_bma_samples, desc="Performing Bayesian model averaging"):
-            # TODO(10): Sample new parameters for self.network from the SWAG approximate posterior
-            self.sample_parameters()
+            # TODO(1): Sample new parameters for self.network from the SWAG approximate posterior
+            print(_)
             #raise NotImplementedError("Sample network parameters")
+            sampled_params = {}
+            for name, mean in self.theta_swag.items():
+                std = self.cov_diag[name].sqrt()  # Calculate the standard deviation from the diagonal covariance
+                sampled_params[name] = torch.normal(mean, std)
 
-            # TODO(10): Perform inference for all samples in `loader` using current model sample,
-            #  and add the predictions to model_predictions
+            # Manually update the network parameters
+            for name, param in self.network.named_parameters():
+                if name in sampled_params:
+                    param.data = sampled_params[name]
+
+
+            # TODO(1): Perform inference for all samples in `loader` using current model sample,
+            # and add the predictions to model_predictions
+            # we need to predict for each of the networks
             batch_predictions = []
             for (batch_images,) in loader:
                 with torch.no_grad():
@@ -310,7 +332,11 @@ class SWAGInference(object):
             # Aggregate predictions for this sampled model
             model_predictions.append(torch.cat(batch_predictions, dim=0))
 
-            #raise NotImplementedError("Perform inference using current model")
+            #all_predictions = []
+            #for (batch_images,) in loader:
+            #    all_predictions.append(self.network(batch_images))
+
+            # raise NotImplementedError("Perform inference using current model")
 
         assert len(model_predictions) == self.num_bma_samples
         assert all(
@@ -320,9 +346,8 @@ class SWAGInference(object):
             for sample_predictions in model_predictions
         )
 
-        # TODO(10): Average predictions from different model samples into bma_probabilities
-        
-        # raise NotImplementedError("Aggregate predictions from model samples")
+        # TODO(1): Average predictions from different model samples into bma_probabilities
+        #raise NotImplementedError("Aggregate predictions from model samples")
         bma_probabilities = torch.mean(torch.stack(model_predictions), dim=0)
 
         assert bma_probabilities.dim() == 2 and bma_probabilities.size(1) == 6  # N x C
@@ -339,10 +364,10 @@ class SWAGInference(object):
         for name, param in self.network.named_parameters():
             # SWAG-diagonal part
             z_diag = torch.randn(param.size())
-            # TODO(10): Sample parameter values for SWAG-diagonal
-            # raise NotImplementedError("Sample parameter for SWAG-diagonal")
-            mean_weights = self.theta_swag[name]
-            std_weights = self.cov_diag[name].sqrt()
+            # TODO(1): Sample parameter values for SWAG-diagonal
+            #raise NotImplementedError("Sample parameter for SWAG-diagonal")
+            mean_weights = self.theta_swag[name]  # The mean parameter values for SWAG
+            std_weights = self.cov_diag[name].sqrt()  # The standard deviation derived from the diagonal covariance
             assert mean_weights.size() == param.size() and std_weights.size() == param.size()
 
             # Diagonal part
@@ -355,12 +380,12 @@ class SWAGInference(object):
                 sampled_weight += ...
 
             # Modify weight value in-place; directly changing self.network
-            param.copy_(sampled_weight)
+            param.data = sampled_weight
 
-        # TODO(10): Don't forget to update batch normalization statistics using self._update_batchnorm_statistics()
+        # TODO(1): Don't forget to update batch normalization statistics using self._update_batchnorm_statistics()
         #  in the appropriate place!
-        self._update_batchnorm_statistics()    
         #raise NotImplementedError("Update batch normalization statistics for newly sampled network")
+        self._update_batchnorm_statistics()
 
     def predict_labels(self, predicted_probabilities: torch.Tensor) -> torch.Tensor:
         """
