@@ -115,11 +115,11 @@ class SWAGInference(object):
         # TODO(20): change inference_mode to InferenceMode.SWAG_FULL
         inference_mode: InferenceType = InferenceType.SWAG_FULL,
         # TODO(20): optionally add/tweak hyperparameters
-        swag_training_epochs: int = 30,
+        swag_training_epochs: int = 50,
         swag_lr: float = 0.045,
         swag_update_interval: int = 1,
-        max_rank_deviation_matrix: int = 15,
-        num_bma_samples: int = 30,
+        max_rank_deviation_matrix: int = 25,
+        num_bma_samples: int = 50,
     ):
         """
         :param train_xs: Training images (for storage only)
@@ -621,7 +621,15 @@ class SWAGScheduler(torch.optim.lr_scheduler.LRScheduler):
         """
          # TODO(2): Implement a custom schedule if desired
         
-        return previous_lr
+        # return previous_lr
+        cycle_length = 25  # Length of one cycle in epochs
+        min_lr = 0.0001
+        max_lr = 0.05
+        cycle_position = (current_epoch % cycle_length) / cycle_length
+        
+        # Cosine annealing within each cycle
+        lr = min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(cycle_position * math.pi))
+        return lr
 
     # TODO(20): Add and store additional arguments if you decide to implement a custom scheduler
     def __init__(
