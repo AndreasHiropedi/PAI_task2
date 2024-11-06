@@ -15,7 +15,7 @@ from matplotlib import pyplot as plt
 
 from util import draw_reliability_diagram, cost_function, setup_seeds, calc_calibration_curve
 
-EXTENDED_EVALUATION = False
+EXTENDED_EVALUATION = True
 """
 Set `EXTENDED_EVALUATION` to `True` in order to generate additional plots on validation data.
 """
@@ -115,7 +115,7 @@ class SWAGInference(object):
         # TODO(20): change inference_mode to InferenceMode.SWAG_FULL
         inference_mode: InferenceType = InferenceType.SWAG_FULL,
         # TODO(20): optionally add/tweak hyperparameters
-        swag_training_epochs: int = 1,
+        swag_training_epochs: int = 30,
         swag_lr: float = 0.045,
         swag_update_interval: int = 1,
         max_rank_deviation_matrix: int = 15,
@@ -194,7 +194,8 @@ class SWAGInference(object):
                 if len(self.D[name]) == self.max_rank_deviation_matrix:
                     self.D[name].popleft()
                 # update deviation matrix
-                self.D[name].append(param - self.theta_swag[name])
+                deviation = (param - self.theta_swag[name]).view(-1)
+                self.D[name].append(deviation)
 
             #raise NotImplementedError("Update full SWAG statistics")
 
@@ -359,17 +360,19 @@ class SWAGInference(object):
 
             # Full SWAG part
             if self.inference_mode == InferenceType.SWAG_FULL:
-                # TODO(20): Sample parameter values for full SWAG
+                # TODO(2): Sample parameter values for full SWAG
                 #raise NotImplementedError("Sample parameter for full SWAG")
-                z_full = torch.randn(self.max_rank_deviation_matrix)
+                z_full = torch.randn(len(self.D[name]))
 
                 # need help with getting it to transpose
 
                 D_matrix = torch.stack(list(self.D[name]), dim=-1)
-                D_product = D_matrix @ D_matrix.T
+                # D_product = (D_matrix @ z_full)
 
-                extraProb = D_product/math.sqrt(2*(self.max_rank_deviation_matrix-1)) * z_full
-                sampled_weight += extraProb/self.num_bma_samples
+                extraProb = D_matrix/math.sqrt(2*(self.max_rank_deviation_matrix-1))@ z_full
+                # sampled_weight += extraProb/self.num_bma_samples
+                sampled_weight = sampled_weight.view(-1) + extraProb
+                sampled_weight = sampled_weight.view(param.size())
 
             # Modify weight value in-place; directly changing self.network
             param.copy_(sampled_weight)
