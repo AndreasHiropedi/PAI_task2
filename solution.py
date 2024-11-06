@@ -112,10 +112,10 @@ class SWAGInference(object):
         train_xs: torch.Tensor,
         model_dir: pathlib.Path,
         # TODO(10): change inference_mode to InferenceMode.SWAG_DIAGONAL
-        # TODO(2): change inference_mode to InferenceMode.SWAG_FULL
-        inference_mode: InferenceType = InferenceType.SWAG_DIAGONAL,
-        # TODO(2): optionally add/tweak hyperparameters
-        swag_training_epochs: int = 30,
+        # TODO(20): change inference_mode to InferenceMode.SWAG_FULL
+        inference_mode: InferenceType = InferenceType.SWAG_FULL,
+        # TODO(20): optionally add/tweak hyperparameters
+        swag_training_epochs: int = 2,
         swag_lr: float = 0.045,
         swag_update_interval: int = 1,
         max_rank_deviation_matrix: int = 15,
@@ -159,11 +159,12 @@ class SWAGInference(object):
         #  but can always act on per-layer weights (in the format that _create_weight_copy() returns)
 
         # Full SWAG
-        # TODO(2): create attributes for SWAG-full
+        # TODO(20): create attributes for SWAG-full
+        self.D = collections.deque()
         #  Hint: check collections.deque
 
         # Calibration, prediction, and other attributes
-        # TODO(2): create additional attributes, e.g., for calibration
+        # TODO(20): create additional attributes, e.g., for calibration
         self._calibration_threshold = None  # this is an example, feel free to be creative
 
     def update_swag_statistics(self) -> None:
@@ -186,8 +187,14 @@ class SWAGInference(object):
 
         # Full SWAG
         if self.inference_mode == InferenceType.SWAG_FULL:
-            # TODO(2): update full SWAG attributes for weight `name` using `copied_params` and `param`
-            raise NotImplementedError("Update full SWAG statistics")
+            # TODO(20): update full SWAG attributes for weight `name` using `copied_params` and `param`
+            for name, param in copied_params.items():
+                if len(self.D) == self.max_rank_deviation_matrix:
+                    self.D.popleft()
+                # update deviation matrix
+                self.D.append(param-self.theta_swag[name])
+
+            #raise NotImplementedError("Update full SWAG statistics")
 
     def fit_swag_model(self, loader: torch.utils.data.DataLoader) -> None:
         """
@@ -209,7 +216,7 @@ class SWAGInference(object):
         loss_fn = torch.nn.CrossEntropyLoss(
             reduction="mean",
         )
-        # TODO(2): Update SWAGScheduler instantiation if you decided to implement a custom schedule.
+        # TODO(20): Update SWAGScheduler instantiation if you decided to implement a custom schedule.
         #  By default, this scheduler just keeps the initial learning rate given to `optimizer`.
         lr_scheduler = SWAGScheduler(
             optimizer,
@@ -270,7 +277,7 @@ class SWAGInference(object):
         #  The provided value should suffice to pass the easy baseline.
         self._calibration_threshold = 2.0 / 3.0
 
-        # TODO(2): perform additional calibration if desired.
+        # TODO(20): perform additional calibration if desired.
         #  Feel free to remove or change the prediction threshold.
         val_images, val_snow_labels, val_cloud_labels, val_labels = validation_data.tensors
         assert val_images.size() == (140, 3, 60, 60)  # N x C x H x W
@@ -350,9 +357,17 @@ class SWAGInference(object):
 
             # Full SWAG part
             if self.inference_mode == InferenceType.SWAG_FULL:
-                # TODO(2): Sample parameter values for full SWAG
-                raise NotImplementedError("Sample parameter for full SWAG")
-                sampled_weight += ...
+                # TODO(20): Sample parameter values for full SWAG
+                #raise NotImplementedError("Sample parameter for full SWAG")
+                z_full = torch.randn(len(self.D))
+
+                # need help with getting it to transpose
+
+                D_matrix = np.array(self.D)
+                D_product = D_matrix @ D_matrix.T
+
+                extraProb = D_product/math.sqrt(2*(len(self.D)-1)) * z_full
+                sampled_weight += extraProb/self.num_bma_samples
 
             # Modify weight value in-place; directly changing self.network
             param.copy_(sampled_weight)
@@ -381,7 +396,7 @@ class SWAGInference(object):
         # return max_likelihood_labels
 
         # A bit better: use a threshold to decide whether to return a label or "don't know" (label -1)
-        # TODO(2): implement a different decision rule if desired
+        # TODO(20): implement a different decision rule if desired
         return torch.where(
             label_probabilities >= self._calibration_threshold,
             max_likelihood_labels,
@@ -599,10 +614,11 @@ class SWAGScheduler(torch.optim.lr_scheduler.LRScheduler):
 
         This method should return a single float: the new learning rate.
         """
-        # TODO(2): Implement a custom schedule if desired
+         # TODO(2): Implement a custom schedule if desired
+        
         return previous_lr
 
-    # TODO(2): Add and store additional arguments if you decide to implement a custom scheduler
+    # TODO(20): Add and store additional arguments if you decide to implement a custom scheduler
     def __init__(
         self,
         optimizer: torch.optim.Optimizer,

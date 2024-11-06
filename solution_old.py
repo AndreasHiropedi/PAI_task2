@@ -625,6 +625,7 @@ class SWAGScheduler(torch.optim.lr_scheduler.LRScheduler):
         This method should return a single float: the new learning rate.
         """
         # TODO(2): Implement a custom schedule if desired
+        
         return previous_lr
 
     # TODO(2): Add and store additional arguments if you decide to implement a custom scheduler
