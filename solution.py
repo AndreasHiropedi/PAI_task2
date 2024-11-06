@@ -115,7 +115,7 @@ class SWAGInference(object):
         # TODO(20): change inference_mode to InferenceMode.SWAG_FULL
         inference_mode: InferenceType = InferenceType.SWAG_FULL,
         # TODO(20): optionally add/tweak hyperparameters
-        swag_training_epochs: int = 2,
+        swag_training_epochs: int = 1,
         swag_lr: float = 0.045,
         swag_update_interval: int = 1,
         max_rank_deviation_matrix: int = 15,
@@ -160,7 +160,7 @@ class SWAGInference(object):
 
         # Full SWAG
         # TODO(20): create attributes for SWAG-full
-        self.D = collections.deque()
+        self.D = {}
         #  Hint: check collections.deque
 
         # Calibration, prediction, and other attributes
@@ -189,10 +189,12 @@ class SWAGInference(object):
         if self.inference_mode == InferenceType.SWAG_FULL:
             # TODO(20): update full SWAG attributes for weight `name` using `copied_params` and `param`
             for name, param in copied_params.items():
-                if len(self.D) == self.max_rank_deviation_matrix:
-                    self.D.popleft()
+                if name not in self.D:
+                    self.D[name] = collections.deque()
+                if len(self.D[name]) == self.max_rank_deviation_matrix:
+                    self.D[name].popleft()
                 # update deviation matrix
-                self.D.append(param-self.theta_swag[name])
+                self.D[name].append(param - self.theta_swag[name])
 
             #raise NotImplementedError("Update full SWAG statistics")
 
@@ -359,14 +361,14 @@ class SWAGInference(object):
             if self.inference_mode == InferenceType.SWAG_FULL:
                 # TODO(20): Sample parameter values for full SWAG
                 #raise NotImplementedError("Sample parameter for full SWAG")
-                z_full = torch.randn(len(self.D))
+                z_full = torch.randn(self.max_rank_deviation_matrix)
 
                 # need help with getting it to transpose
 
-                D_matrix = np.array(self.D)
+                D_matrix = torch.stack(list(self.D[name]), dim=-1)
                 D_product = D_matrix @ D_matrix.T
 
-                extraProb = D_product/math.sqrt(2*(len(self.D)-1)) * z_full
+                extraProb = D_product/math.sqrt(2*(self.max_rank_deviation_matrix-1)) * z_full
                 sampled_weight += extraProb/self.num_bma_samples
 
             # Modify weight value in-place; directly changing self.network
